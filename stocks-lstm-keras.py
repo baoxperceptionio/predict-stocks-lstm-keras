@@ -49,14 +49,14 @@ class Predict:
 if __name__ == "__main__":
  
   predict = Predict()
-  nstocks = 2;
+  nstocks = 2
  
   # do learning, prediction, show to each stock
   for istock in range(1, nstocks + 1):
     
     # prepare data 
     data = None
-    data = pandas.read_csv('/content/drive/My Drive/LSTM/csv/' + str(istock) + '_stock_price.csv')
+    data = pandas.read_csv('./csv/' + str(istock) + '_stock_price.csv')
     data.columns = ['date', 'open', 'high', 'low', 'close']
     data['date'] = pandas.to_datetime(data['date'], format='%Y-%m-%d')
  
