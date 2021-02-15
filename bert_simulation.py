@@ -13,40 +13,48 @@ from keras.models import Sequential
 from keras.layers.core import Dense, Activation
 from keras.layers.recurrent import LSTM
  
+import msgpack_numpy as msg_np
+
 class Predict:
   def __init__(self):
     self.length_of_sequences = 5
     self.bert_dim = 648
     self.batch_size = 1
-    self.train_sample_num = 995
+    self.train_sample_num = 111
     self.epochs = 100
     self.percentage = 0.8
  
   # prepare data
-  def load_data(self, data, n_prev):
-    x, y = [], []
-    for i in range(len(data) - n_prev):
-      x.append(data.iloc[i:(i+n_prev)].values)
-      y.append(data.iloc[i+n_prev].values)
-    X = numpy.array(x)
-    Y = numpy.array(y)
-    return X, Y
+  def load_data(self, htb_msgpack_file='/data/chat_service/htb_vecs_3.msgpack', bth_msgpack_file='/data/chat_service/bth_vecs_3.msgpack'):
+    with open(htb_msgpack_file, 'rb') as f:
+      htb_vecs = msg_np.unpackb(f.read())
+    with open(bth_msgpack_file, 'rb') as f:
+      btb_vecs = msg_np.unpackb(f.read())
+    self.length_of_sequences = numpy.shape(htb_vecs)[1]
+    self.train_sample_num = numpy.shape(htb_vecs)[0]
+    self.bert_dim = numpy.shape(htb_vecs)[2]
+    glog.check_eq(self.length_of_sequences, numpy.shape(btb_vecs)[1])
+    glog.check_eq(self.train_sample_num, numpy.shape(btb_vecs)[0])
+    glog.check_eq(self.bert_dim, numpy.shape(btb_vecs)[2])
+    return htb_vecs, btb_vecs
 
   # stress test
-  def random_data(self, seq_num):
-    X = numpy.random.rand(seq_num, self.length_of_sequences, self.bert_dim)
-    Y = numpy.random.rand(seq_num, self.length_of_sequences, self.bert_dim)
+  def random_data(self):
+    X = numpy.random.rand(self.train_sample_num, self.length_of_sequences, self.bert_dim)
+    Y = numpy.random.rand(self.train_sample_num, self.length_of_sequences, self.bert_dim)
     return X, Y
 
  
   # make model
   def create_model(self) :
     Model = Sequential()
+    # https://machinelearningmastery.com/reshape-input-data-long-short-term-memory-networks-keras/
     # Expected input batch shape: (batch_size, timesteps, data_dim).
     input_shape=(self.length_of_sequences, self.bert_dim)
-    batch_input_shape=(self.batch_size, self.length_of_sequences, self.bert_dim)
+    batch_input_shape=(None, self.length_of_sequences, self.bert_dim)
     # units: Positive integer, dimensionality of the output space 
-    Model.add(LSTM(units=self.bert_dim, input_shape=input_shape, return_sequences=False))
+    #Model.add(LSTM(units=self.bert_dim, input_shape=input_shape, return_sequences=False))
+    Model.add(LSTM(units=self.bert_dim, batch_input_shape=batch_input_shape, return_sequences=False))
     Model.add(Dense(self.bert_dim))
     Model.add(Activation("linear"))
     Model.compile(loss="mape", optimizer="adam")
@@ -81,14 +89,15 @@ if __name__ == "__main__":
  
     # split data for learning and test by partition
     split_pos = int(len(data) * predict.percentage)
-    #x_train, y_train = predict.load_data(data[['close']].iloc[0:split_pos], predict.length_of_sequences)
-    x_train, y_train = predict.random_data(seq_num=self.train_sample_num)
+    # x_train, y_train = predict.random_data()
+    x_train, y_train = predict.load_data()
     # x_test, y_test = predict.load_data(data[['close']].iloc[split_pos:], predict.length_of_sequences)
     glog.info("x_train shape " + str(numpy.shape(x_train)))
     glog.info("y_train shape " + str(numpy.shape(y_train)))
     # do learning
     
     model = predict.train(x_train, y_train)
+    exit()
     # do test
     x_test, y_test = predict.load_data(data[['close']].iloc[split_pos:], predict.length_of_sequences)
     predicted = model.predict(x_test)
