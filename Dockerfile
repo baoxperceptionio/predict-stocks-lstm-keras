@@ -1,4 +1,4 @@
-FROM mirror.ccs.tencentyun.com/tensorflow/tensorflow
+FROM mirror.ccs.tencentyun.com/tensorflow/tensorflow:latest-gpu-jupyter
 RUN pip3 config --user set global.index-url https://mirrors.cloud.tencent.com/pypi/simple
 RUN pip3 config --user set global.trusted-mirrors.cloud.tencent.com tcloud
 RUN apt-get install wget
