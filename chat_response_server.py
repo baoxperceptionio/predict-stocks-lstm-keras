@@ -100,7 +100,6 @@ def process_get_response():
         "vec_out" : vec_out
     }
     response = app.response_class(
-        msg="ok",
         response=msg_np.packb(ret_data),
         status=200,
         mimetype='application/msgpack_numpy'

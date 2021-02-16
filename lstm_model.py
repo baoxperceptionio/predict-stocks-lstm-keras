@@ -78,9 +78,11 @@ class LstmModel:
     batch_input_shape=(None, self.length_of_sequences, self.bert_dim)
     # units: Positive integer, dimensionality of the output space 
     #Model.add(LSTM(units=self.bert_dim, input_shape=input_shape, return_sequences=False))
+    lstm_out_units = 50 # this does not neccessarily equal to bert dim
+    # see the # of param calculation in https://datascience.stackexchange.com/questions/10615/number-of-parameters-in-an-lstm-model
     self.model.add(LSTM(units=self.bert_dim, input_length=self.length_of_sequences, input_dim=self.bert_dim, return_sequences=False))
     self.model.add(Dense(units=self.bert_dim, activation='relu'))
-    self.model.add(Dense(units=self.bert_dim))
+    # self.model.add(Dense(units=self.bert_dim))
     self.model.add(Activation("linear"))
     #Model.compile(loss=tf.keras.losses.CosineSimilarity(axis=0), optimizer="sgd")
     self.model.compile(loss="mean_squared_error", optimizer="sgd")
