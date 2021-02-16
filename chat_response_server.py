@@ -93,6 +93,7 @@ def process_get_response():
     decode_content = msg_np.unpackb(request.data)
     session_id = decode_content['session_id']
     vec_in = decode_content['vec_in']
+    glog.info('predict vec_in shape ' + str(vec_in.shape))
     vec_out = model_wrapper.predict(vec_in)
     ret_data = {
         "session_id" : session_id,
