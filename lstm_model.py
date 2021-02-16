@@ -18,7 +18,7 @@ class LstmModel:
   def __init__(self, epochs=30000, length_of_sequences=1, bert_dim=768):
     self.length_of_sequences = length_of_sequences
     self.bert_dim = bert_dim
-    self.batch_size = 1024
+    self.batch_size = 2048
     self.train_sample_num = 0
     self.epochs = epochs
     self.output_dir = 'checkpoint'
@@ -36,6 +36,10 @@ class LstmModel:
     model_checkpoint = ModelCheckpoint(
         filepath=fpath_weights, verbose=True, save_freq=5000
     )
+    early_stop = tf.keras.callbacks.EarlyStopping(
+      monitor='loss', min_delta=1e-6, patience=500, verbose=0,
+      mode='auto', baseline=None, restore_best_weights=False)
+
     callbacks = [model_checkpoint]
 
     return callbacks
@@ -75,15 +79,14 @@ class LstmModel:
     # https://machinelearningmastery.com/reshape-input-data-long-short-term-memory-networks-keras/
     # Expected input batch shape: (batch_size, timesteps, data_dim).
     input_shape=(self.length_of_sequences, self.bert_dim)
-    batch_input_shape=(None, self.length_of_sequences, self.bert_dim)
     # units: Positive integer, dimensionality of the output space 
     #Model.add(LSTM(units=self.bert_dim, input_shape=input_shape, return_sequences=False))
-    lstm_out_units = 50 # this does not neccessarily equal to bert dim
+    lstm_out_units = 128 # this does not neccessarily equal to bert dim
     # see the # of param calculation in https://datascience.stackexchange.com/questions/10615/number-of-parameters-in-an-lstm-model
-    self.model.add(LSTM(units=self.bert_dim, input_length=self.length_of_sequences, input_dim=self.bert_dim, return_sequences=False))
-    self.model.add(Dense(units=self.bert_dim, activation='relu'))
+    self.model.add(LSTM(units=lstm_out_units, input_length=self.length_of_sequences, input_dim=self.bert_dim, return_sequences=False))
+    self.model.add(Dense(units=self.bert_dim, activation='relu', kernel_constraint=tf.keras.constraints.UnitNorm(axis=0)))
     # self.model.add(Dense(units=self.bert_dim))
-    self.model.add(Activation("linear"))
+    # self.model.add(Activation("linear"))
     #Model.compile(loss=tf.keras.losses.CosineSimilarity(axis=0), optimizer="sgd")
     self.model.compile(loss="mean_squared_error", optimizer="sgd")
     self.model.summary()
