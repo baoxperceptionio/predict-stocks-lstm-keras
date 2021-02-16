@@ -5,4 +5,4 @@ RUN apt-get install wget
 RUN wget -O /etc/apt/sources.list http://mirrors.cloud.tencent.com/repo/ubuntu18_sources.list
 RUN apt-get update
 RUN /usr/bin/python3 -m pip install --upgrade pip
-RUN pip3 install Pandas Keras matplotlib sklearn glog msgpack_numpy
+RUN pip3 install Pandas Keras matplotlib sklearn glog msgpack_numpy flask
