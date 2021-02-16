@@ -81,6 +81,7 @@ def process_ping():
 
 @app.route('/get_response', methods = ['POST'])
 def process_get_response():
+    glog.info('get_response is called from ' + str(request.environ['REMOTE_ADDR']) + ":" + str(request.environ['REMOTE_PORT']))
     query = urlparse(request.url).query
     if not query:
         # this might be attacker
