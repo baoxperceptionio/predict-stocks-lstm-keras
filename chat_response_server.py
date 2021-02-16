@@ -44,7 +44,22 @@ glog.info(str(content2['vec']))
 ############
 import lstm_model
 model_wrapper = lstm_model.LstmModel()
-model_wrapper.load_model_from_file(file='checkpoint/100926.h5')
+# load the last model files in checkpoint
+model_file_folder = 'checkpoint'
+files = os.listdir(model_file_folder)
+files.sort()
+files.reverse()
+last_model_file = None
+for file in files:
+    if os.path.isfile(os.path.join(model_file_folder, file)):
+        if file.endswith('h5'):
+            last_model_file = os.path.join(model_file_folder, file)
+            break
+if last_model_file is None:
+    glog.error('no files in ' + model_file_folder)
+    exit()
+glog.info('loading ' + last_model_file)
+model_wrapper.load_model_from_file(file=last_model_file)
 
 def get_timestamp_for_dingding():
     return time.strftime("[%m/%d-%H:%M:%S]", time.localtime())
