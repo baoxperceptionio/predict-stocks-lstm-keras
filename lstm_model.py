@@ -363,13 +363,14 @@ class TestNumpy(unittest.TestCase):
         dp = 0
         for it_col in range(data_dim):
           dp = dp + y1[it, it_col] * y2[it, it_col]
+        dp = dp / np.linalg.norm(y1[it, :]) / np.linalg.norm(y2[it, :])
         loss2 = tf.keras.losses.cosine_similarity([y1[it,:]], [y2[it, :]], axis=1)
         self.assertAlmostEqual(float(loss2), -dp, 5)
 
 
   def test_loss2_cpu(self):
-    sample_num = 100
-    data_dim = 768
+    sample_num = 3
+    data_dim = 2
     y1 = np.random.rand(sample_num, 1, data_dim).astype(float)
     y2 = np.random.rand(sample_num, data_dim).astype(float)
     for it in range(sample_num):
@@ -387,22 +388,22 @@ class TestNumpy(unittest.TestCase):
     # validate loss 1 by 1
     for it in range(sample_num):
       dp = 0
-      for it_col in range(sample_num):
+      for it_col in range(data_dim):
         dp = dp + y1[it, 0, it_col] * y2[it, it_col]
       # In the case of row access, the empty slice can be omitted for a more compact syntax:
       loss = tf.keras.losses.cosine_similarity([y1[it, 0, :]], [y2[it, :]], axis=1)
       self.assertEqual(len(loss.shape), 1)
       self.assertEqual(loss.shape[0], 1)
-      # self.assertAlmostEqual(float(loss[0]), -dp, 5)
+      self.assertAlmostEqual(float(loss[0]), -dp, 5)
 
 
 
 if __name__ == "__main__":
   os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
   gpu_ids = ['0', '1']
-  #os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
-  os.environ["CUDA_VISIBLE_DEVICES"] = ""
+  os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
+  #os.environ["CUDA_VISIBLE_DEVICES"] = ""
   gpu_devices = tf.config.experimental.list_physical_devices('GPU')
   for device in gpu_devices:
     tf.config.experimental.set_memory_growth(device, True)
-  unittest.main()
+  unittest.main(TestNumpy())
