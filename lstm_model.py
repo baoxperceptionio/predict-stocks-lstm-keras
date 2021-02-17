@@ -6,7 +6,7 @@ import numpy as np
 import glog
 import os
 import tensorflow as tf
-
+import unittest
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation, Dropout
 from keras.layers import Reshape
@@ -84,7 +84,7 @@ class LstmModel:
               for it_col in range(htb_vecs.shape[2]):
                 htb_vecs[it, it_msg, it_col] = htb_vecs[it, it_msg, it_col] / norm
               glog.error(str(it) + ' werid htb_vecs norm=' + str(norm))
-
+      tf.cast(htb_vecs, dtype=tf.float32)
     with open(bth_msgpack_file, 'rb') as f:
       bth_vecs = msg_np.unpackb(f.read())
       for it in range(bth_vecs.shape[0]):
@@ -101,6 +101,7 @@ class LstmModel:
               for it_col in range(bth_vecs.shape[2]):
                 bth_vecs[it, it_msg, it_col] = bth_vecs[it, it_msg, it_col] / norm
               glog.error(str(it) + ' werid bth_vecs norm=' + str(norm))
+      tf.cast(bth_vecs, dtype=tf.float32)
     self.length_of_sequences = np.shape(htb_vecs)[1]
     self.train_sample_num = np.shape(htb_vecs)[0]
     self.bert_dim = np.shape(htb_vecs)[2]
@@ -149,7 +150,7 @@ class LstmModel:
     if self.length_of_sequences < 0:
       self.length_of_sequences = 5
     self.train_sample_num = 10000
-    x_train = np.random.rand(self.train_sample_num, self.length_of_sequences * 2 - 1, self.bert_dim)
+    x_train = np.random.rand(self.train_sample_num, self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
     for it0 in range(x_train.shape[0]):
       for it1 in range(x_train.shape[1]):
         x_train[it0, it1, :] = x_train[it0, it1, :] / np.linalg.norm(x_train[it0, it1, :])
@@ -158,7 +159,7 @@ class LstmModel:
     #y_train = np.random.rand(y_train.shape[0], y_train.shape[1], y_train.shape[2])
     for it0 in range(y_train.shape[0]):
       y_train[it0, 0, :] = y_train[it0, 0, :] / np.linalg.norm(y_train[it0, 0, :])
-    x_val = np.random.rand(int(self.train_sample_num * 0.1), self.length_of_sequences * 2 - 1, self.bert_dim)
+    x_val = np.random.rand(int(self.train_sample_num * 0.1), self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
     y_val = x_val[:, -1, :] # so we can get a perfect fit
     y_val = y_val[:, np.newaxis, :]
     #y_val = np.random.rand(y_val.shape[0], y_val.shape[1], y_val.shape[2])
@@ -191,7 +192,7 @@ class LstmModel:
       self.model.add(Dropout(rate=0.1))
       self.model.add(Dense(units=self.bert_dim, activation='linear'))
       # cosine_similarity mean_squared_error
-      self.model.compile(loss="cosine_similarity", optimizer="sgd")
+      self.model.compile(loss=tf.keras.losses.CosineSimilarity(axis=-1), optimizer="sgd")
       self.model.summary()
       return True
     glog.error('multigpu setting failed')
@@ -227,3 +228,102 @@ class LstmModel:
     return True
   def predict(self, x_test):
       return self.model.predict(x_test)
+
+class TestLSTM(unittest.TestCase):
+  def test_random_train(self):
+    model_wrapper = LstmModel()
+    x_train_rand, y_train_rand, x_val_rand, y_val_rand = model_wrapper.random_training_data()
+    model_wrapper.create_model()
+    model_wrapper.epochs = 100
+    model_wrapper.train(x_train=x_train_rand, y_train=y_train_rand, x_val=x_val_rand, y_val=y_val_rand, checkpoint_folder=None)
+
+class TestNumpy(unittest.TestCase):
+  def test_loss(self):
+    y1 = np.array([1, 2, 3, 4, 5, 6], dtype=np.single)
+    y2 = np.array([1, 2, 3, 4, 5, 6], dtype=np.single)
+    self.assertEqual(y1.shape[0], 6)
+    self.assertEqual(len(y1.shape), 1)
+    self.assertEqual(y2.shape[0], 6)
+    self.assertEqual(len(y2.shape), 1)
+    y = [y1, y2]
+    for it in range(2):
+      y[it] = y[it] / np.linalg.norm(y[it])
+    # validate normalization
+    for it in range(2):
+      sum = 0
+      for it_col in range(y[0].shape[0]):
+        sum = sum + y[0][it_col] * y[0][it_col]
+      self.assertAlmostEqual(sum, 1, 5)
+    # make them 2d
+    y[0] = y[0][np.newaxis, :]
+    y[1] = y[1][np.newaxis, :]
+    loss = tf.keras.losses.cosine_similarity(tf.cast(y[0], dtype=tf.float32), tf.cast(y[1], dtype=tf.float32), axis=-1)
+    self.assertEqual(loss.shape[0], 1)
+    glog.info('test_loss loss shape ' + str(loss.shape))
+    self.assertAlmostEqual(float(loss[0]), -1, 5)
+    loss = tf.keras.losses.cosine_similarity([tf.cast(y[0], dtype=tf.float32)], [tf.cast(y[1], dtype=tf.float32)], axis=-1)
+    glog.info('test_loss loss shape ' + str(loss.shape))
+    self.assertEqual(loss.shape[0], 1)
+    self.assertAlmostEqual(float(loss[0]), -1, 5)
+    # make y[0] 3d
+    y[0] = y[0][np.newaxis, np.newaxis, :]
+    loss = tf.keras.losses.cosine_similarity(tf.cast(y[0], dtype=tf.float32), tf.cast(y[1], dtype=tf.float32), axis=-1)
+    self.assertEqual(loss.shape[0], 1)
+    glog.info('test_loss loss shape ' + str(loss.shape))
+    # self.assertAlmostEqual(float(loss[0]), -1, 5)
+  
+  def test_cosine_similarity(self):
+    sample_num = 10
+    data_dim = 3
+    for sample_num in [1, 10, 100]:
+      y1 = np.random.rand(sample_num, data_dim).astype(float)
+      y2 = np.random.rand(sample_num, data_dim).astype(float)
+      loss = tf.keras.losses.cosine_similarity(y1, y2, axis=-1)
+      glog.info('test_cosine_similarity loss shape axis=-1 ' + str(loss.shape))
+      self.assertEqual(loss.shape[0], sample_num)
+      loss = tf.keras.losses.cosine_similarity(y1, y2, axis=0)
+      glog.info('test_cosine_similarity loss shape axis=0 ' + str(loss.shape))
+      self.assertEqual(loss.shape[0], data_dim)
+      loss = tf.keras.losses.cosine_similarity(y1, y2, axis=1)
+      glog.info('test_cosine_similarity loss shape axis=1 ' + str(loss.shape))
+      self.assertEqual(loss.shape[0], sample_num)
+
+  def test_loss2_cpu(self):
+    sample_num = 100
+    data_dim = 768
+    y1 = np.random.rand(sample_num, 1, data_dim).astype(float)
+    y2 = np.random.rand(sample_num, data_dim).astype(float)
+    for it in range(sample_num):
+      y1[it, 0, :] = y1[it, 0, :] / np.linalg.norm(y1[it, 0, :])
+      y2[it, :] = y2[it, :] / np.linalg.norm(y2[it, :])
+    # validate normalization
+    for it in range(sample_num):
+      sum1 = 0
+      sum2 = 0
+      for it_col in range(data_dim):
+        sum1 = sum1 + y1[it, 0, it_col] * y1[it, 0, it_col]
+        sum2 = sum2 + y2[it, it_col] * y2[it, it_col]
+      self.assertAlmostEqual(sum1, 1, 5)
+      self.assertAlmostEqual(sum2, 1, 5)
+    # validate loss 1 by 1
+    for it in range(sample_num):
+      dp = 0
+      for it_col in range(sample_num):
+        dp = dp + y1[it, 0, it_col] * y2[it, it_col]
+      # In the case of row access, the empty slice can be omitted for a more compact syntax:
+      loss = tf.keras.losses.cosine_similarity([y1[it, 0, :]], [y2[it, :]], axis=1)
+      self.assertEqual(len(loss.shape), 1)
+      self.assertEqual(loss.shape[0], 1)
+      # self.assertAlmostEqual(float(loss[0]), -dp, 5)
+
+
+
+if __name__ == "__main__":
+  os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+  gpu_ids = ['0', '1']
+  os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
+  # or os.environ["CUDA_VISIBLE_DEVICES"] = ""
+  gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+  for device in gpu_devices:
+    tf.config.experimental.set_memory_growth(device, True)
+  unittest.main()
