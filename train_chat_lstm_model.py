@@ -27,22 +27,10 @@ if __name__ == "__main__":
   os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
 
   model_wrapper = lstm_model.LstmModel()
- 
+  round = '3'
   # split data for learning and test by partition
-  # x_train, y_train = model_wrapper.random_training_data()
-  htb_vecs, bth_vecs = model_wrapper.load_training_data(htb_msgpack_file='./htb_vecs_1.msgpack', bth_msgpack_file='./bth_vecs_1.msgpack')
-  # shuffle
-  randomList = np.arange(htb_vecs.shape[0])
-  np.random.shuffle(randomList)
-  htb_vecs = htb_vecs[randomList, :, :]
-  bth_vecs = bth_vecs[randomList, :, :]
-  val_percetage = 0.05
-  x_train = htb_vecs[int(htb_vecs.shape[0]*val_percetage):]
-  y_train = bth_vecs[int(bth_vecs.shape[0]*val_percetage):]
-  y_train = y_train[:, -1, :]
-  x_val = htb_vecs[:int(htb_vecs.shape[0]*val_percetage)]
-  y_val = bth_vecs[:int(bth_vecs.shape[0]*val_percetage)]
-  y_val = y_val[:, -1, :]
+  x_train, y_train, x_val, y_val = model_wrapper.load_training_data(htb_msgpack_file='./htb_vecs_' + round + '.msgpack',
+                                                                    bth_msgpack_file='./bth_vecs_' + round + '.msgpack')
   # https://medium.com/@daniel820710/%E5%88%A9%E7%94%A8keras%E5%BB%BA%E6%A7%8Blstm%E6%A8%A1%E5%9E%8B-%E4%BB%A5stock-prediction-%E7%82%BA%E4%BE%8B-1-67456e0a0b
   # from 2 dimmension to 3 dimension
   #y_train = y_train[:, :, np.newaxis]
@@ -50,8 +38,19 @@ if __name__ == "__main__":
   glog.info("x_train shape " + str(np.shape(x_train)))
   glog.info("y_train shape " + str(np.shape(y_train)))
   model_wrapper.create_model()
-  # do learning  
-  model_wrapper.train(x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val)
+  checkpoint_folder = 'checkpoint_rnd'+round
+  if not os.path.exists(checkpoint_folder):
+    os.mkdir(checkpoint_folder)
+  # use random data to init
+  if True:
+    x_train_rand, y_train_rand, x_val_rand, y_val_rand = model_wrapper.random_training_data()
+    model_wrapper.epochs = 100
+    model_wrapper.train(x_train=x_train_rand, y_train=y_train_rand, x_val=x_val_rand, y_val=y_val_rand, checkpoint_folder=None)
+    model_wrapper.model.save_weights(os.path.join(checkpoint_folder, round + '_random.h5'))
+  # do learning
+  model_wrapper.epochs = 10000
+  model_wrapper.train(x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val, checkpoint_folder=checkpoint_folder)
+  model_wrapper.model.save_weights(os.path.join(checkpoint_folder, round + '_final.h5'))
   # double check
   y_pred = model_wrapper.predict(x_train)
   distances = np.empty((y_pred.shape[0], 1))
