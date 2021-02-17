@@ -20,7 +20,6 @@ class LstmModel:
     self.length_of_sequences = -1
     self.bert_dim = bert_dim
     self.batch_size = 1024
-    self.train_sample_num = 0
     self.epochs = epochs
     self.output_dir = output_dir
     self.gpu_devices = gpu_devices
@@ -103,31 +102,31 @@ class LstmModel:
               glog.error(str(it) + ' werid bth_vecs norm=' + str(norm))
       tf.cast(bth_vecs, dtype=tf.float32)
     self.length_of_sequences = np.shape(htb_vecs)[1]
-    self.train_sample_num = np.shape(htb_vecs)[0]
+    train_sample_num = np.shape(htb_vecs)[0]
     self.bert_dim = np.shape(htb_vecs)[2]
     glog.info('self.length_of_sequences=' + str(self.length_of_sequences))
-    glog.info('self.train_sample_num=' + str(self.train_sample_num))
+    glog.info('train_sample_num=' + str(train_sample_num))
     glog.info('self.bert_dim=' + str(self.bert_dim))
     glog.check_eq(self.length_of_sequences, np.shape(bth_vecs)[1])
-    glog.check_eq(self.train_sample_num, np.shape(bth_vecs)[0])
+    glog.check_eq(train_sample_num, np.shape(bth_vecs)[0])
     glog.check_eq(self.bert_dim, np.shape(bth_vecs)[2])
     # split data
     # shuffle
-    randomList = np.arange(self.train_sample_num)
+    randomList = np.arange(train_sample_num)
     np.random.shuffle(randomList)
     htb_vecs = htb_vecs[randomList, :, :]
     bth_vecs = bth_vecs[randomList, :, :]
     # given hhhh, bbbb: hbhbhbh is x, b is y
-    x = np.empty((self.train_sample_num, self.length_of_sequences * 2 - 1, self.bert_dim))
-    y = np.empty((self.train_sample_num, 1, self.bert_dim))
-    for it_sample in range(self.train_sample_num):
+    x = np.empty((train_sample_num, self.length_of_sequences * 2 - 1, self.bert_dim))
+    y = np.empty((train_sample_num, 1, self.bert_dim))
+    for it_sample in range(train_sample_num):
       for it_round in range(self.length_of_sequences):
         x[it_sample, it_round * 2, :] = htb_vecs[it_sample, it_round, :]
         if it_round < self.length_of_sequences - 1:
           x[it_sample, it_round * 2 + 1, :] = bth_vecs[it_sample, it_round, :]
       y[it_sample, 0, :] = bth_vecs[it_sample, -1, :]
     val_percetage = 0.05
-    split_pos = int(self.train_sample_num * val_percetage)
+    split_pos = int(train_sample_num * val_percetage)
     x_train = x[split_pos:, :, :]
     y_train = y[split_pos:, :, :]
     if y_train.ndim == 3:
@@ -145,30 +144,84 @@ class LstmModel:
     return x_train, y_train, x_val, y_val
 
   # stress test
-  def random_training_data(self):
+  def random_training_data(self, train_sample_num):
     # generate random perfect data for testing or for boostrap model parameters
     if self.length_of_sequences < 0:
       self.length_of_sequences = 5
-    self.train_sample_num = 10000
-    x_train = np.random.rand(self.train_sample_num, self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
+    x_train = np.random.rand(train_sample_num, self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
     for it0 in range(x_train.shape[0]):
       for it1 in range(x_train.shape[1]):
         x_train[it0, it1, :] = x_train[it0, it1, :] / np.linalg.norm(x_train[it0, it1, :])
     y_train = x_train[:, -1, :] # so we can get a perfect fit
-    y_train = y_train[:, np.newaxis, :]
-    #y_train = np.random.rand(y_train.shape[0], y_train.shape[1], y_train.shape[2])
-    for it0 in range(y_train.shape[0]):
-      y_train[it0, 0, :] = y_train[it0, 0, :] / np.linalg.norm(y_train[it0, 0, :])
-    x_val = np.random.rand(int(self.train_sample_num * 0.1), self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
+    if False:
+      y_train = y_train[:, np.newaxis, :]
+      #y_train = np.random.rand(y_train.shape[0], y_train.shape[1], y_train.shape[2])
+      for it0 in range(y_train.shape[0]):
+        y_train[it0, 0, :] = y_train[it0, 0, :] / np.linalg.norm(y_train[it0, 0, :])
+    else:
+      #y_train = np.random.rand(y_train.shape[0], y_train.shape[1], y_train.shape[2])
+      for it0 in range(y_train.shape[0]):
+        y_train[it0, :] = y_train[it0, :] / np.linalg.norm(y_train[it0, :])
+
+    x_val = np.random.rand(int(train_sample_num * 0.1), self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
     y_val = x_val[:, -1, :] # so we can get a perfect fit
-    y_val = y_val[:, np.newaxis, :]
-    #y_val = np.random.rand(y_val.shape[0], y_val.shape[1], y_val.shape[2])
-    for it0 in range(y_val.shape[0]):
-      y_val[it0, 0, :] = y_val[it0, 0, :] / np.linalg.norm(y_val[it0, 0, :])
+    if False:
+      y_val = y_val[:, np.newaxis, :]
+      #y_val = np.random.rand(y_val.shape[0], y_val.shape[1], y_val.shape[2])
+      for it0 in range(y_val.shape[0]):
+        y_val[it0, 0, :] = y_val[it0, 0, :] / np.linalg.norm(y_val[it0, 0, :])
+    else:
+      #y_val = np.random.rand(y_val.shape[0], y_val.shape[1], y_val.shape[2])
+      for it0 in range(y_val.shape[0]):
+        y_val[it0, :] = y_val[it0, :] / np.linalg.norm(y_val[it0, :])
+
     if not self.check_training_val_data_format(x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val):
-      exit()
+      pass#exit()
     return x_train, y_train, x_val, y_val
- 
+   
+  def random_training_dataset(self, sample_num=100):
+    # generate random perfect data for testing or for boostrap model parameters
+    if self.length_of_sequences < 0:
+      self.length_of_sequences = 5
+    train_x = []
+    train_y = []
+    for it in range(sample_num):
+      x = np.random.rand(self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
+      for it1 in range(x.shape[0]):
+        x[it1, :] = x[it1, :] / np.linalg.norm(x[it1, :])
+      y = x[-1, :]
+      x = x[np.newaxis, :, :]
+      array_sum = np.sum(x)
+      if np.isnan(array_sum):
+        glog.fatal('x nan')
+      y = y[np.newaxis, np.newaxis, :]
+      train_x.append(x)
+      train_y.append(y)
+    val_x = []
+    val_y = []
+    for it in range(int(sample_num * 0.05)):
+      x = np.random.rand(self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
+      for it1 in range(x.shape[0]):
+        x[it1, :] = x[it1, :] / np.linalg.norm(x[it1, :])
+      x = x[np.newaxis, :, :]
+      array_sum = np.sum(x)
+      if np.isnan(array_sum):
+        glog.fatal('x nan')
+      y = x[-1, :]
+      y = y[np.newaxis, np.newaxis, :]
+      val_x.append(x)
+      val_y.append(y)
+
+    #if not self.check_training_val_data_format(x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val):
+    #  exit()
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    train_dataset = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+    train_dataset = train_dataset.with_options(options)
+    val_dataset = tf.data.Dataset.from_tensor_slices((val_x, val_y))
+    val_dataset = train_dataset.with_options(options)
+
+    return train_dataset, val_dataset
   # make model
   def create_model(self):
     if self.length_of_sequences == 0:
@@ -182,7 +235,8 @@ class LstmModel:
       # https://arxiv.org/pdf/1409.3215.pdf 
       # We found deep LSTMs to significantly outperform shallow LSTMs, 
       # where each additional layer reduced perplexity by nearly 10%, possibly due to their much larger hidden state. 
-      self.model.add(LSTM(units=lstm_out_units, input_length=self.length_of_sequences * 2 - 1, input_dim=self.bert_dim, return_sequences=False, dropout=0.1))
+      timestamp_num = self.length_of_sequences * 2 - 1
+      self.model.add(LSTM(units=lstm_out_units, input_length=timestamp_num, input_dim=self.bert_dim, return_sequences=False, dropout=0.1))
       self.model.add(Reshape(target_shape=(1, lstm_out_units)))
       self.model.add(LSTM(units=lstm_out_units, input_length=1, input_dim=lstm_out_units, return_sequences=False, dropout=0.1))
       self.model.add(Reshape(target_shape=(1, lstm_out_units)))
@@ -219,12 +273,15 @@ class LstmModel:
     glog.info('loading ' + last_model_file + ' ok')
     return True
   # do learning
-  def train(self, x_train, y_train, x_val, y_val, checkpoint_folder=None):
+  def train(self, x_train=None, y_train=None, x_val=None, y_val=None, train_dataset=None, val_dataset=None, checkpoint_folder=None):
     # try to load from check point
     if checkpoint_folder is not None:
       self.load_last_checkpoint(checkpoint_folder=checkpoint_folder)
-    # tf.debugging.set_log_device_placement(True)
-    self.model.fit(x_train, y_train, batch_size=self.batch_size, validation_data=(x_val, y_val), epochs=self.epochs, workers=16, callbacks=self.get_callbacks())
+    if train_dataset is not None:
+      self.model.fit(train_dataset, validation_data=val_dataset, batch_size=self.batch_size, epochs=self.epochs, workers=16, callbacks=self.get_callbacks())
+    else:
+      # tf.debugging.set_log_device_placement(True)
+      self.model.fit(x_train, y_train, batch_size=self.batch_size, validation_data=(x_val, y_val), epochs=self.epochs, workers=16, callbacks=self.get_callbacks())
     return True
   def predict(self, x_test):
       return self.model.predict(x_test)
@@ -232,10 +289,25 @@ class LstmModel:
 class TestLSTM(unittest.TestCase):
   def test_random_train(self):
     model_wrapper = LstmModel()
-    x_train_rand, y_train_rand, x_val_rand, y_val_rand = model_wrapper.random_training_data()
+    train_ds, val_ds = model_wrapper.random_training_dataset(sample_num=10000)
     model_wrapper.create_model()
-    model_wrapper.epochs = 100
-    model_wrapper.train(x_train=x_train_rand, y_train=y_train_rand, x_val=x_val_rand, y_val=y_val_rand, checkpoint_folder=None)
+    model_wrapper.epochs = 10
+    for elem in train_ds:
+      self.assertEqual(elem[0].numpy().shape[0], 1)
+      self.assertEqual(elem[0].numpy().shape[1], model_wrapper.length_of_sequences * 2 - 1)
+      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
+      self.assertEqual(elem[1].numpy().shape[0], 1)
+      self.assertEqual(elem[1].numpy().shape[1], 1)
+      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
+
+    for elem in val_ds:
+      self.assertEqual(elem[0].numpy().shape[0], 1)
+      self.assertEqual(elem[0].numpy().shape[1], model_wrapper.length_of_sequences * 2 - 1)
+      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
+      self.assertEqual(elem[1].numpy().shape[0], 1)
+      self.assertEqual(elem[1].numpy().shape[1], 1)
+      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
+    model_wrapper.train(train_dataset=train_ds, val_dataset=val_ds, checkpoint_folder=None)
 
 class TestNumpy(unittest.TestCase):
   def test_loss(self):
@@ -287,6 +359,13 @@ class TestNumpy(unittest.TestCase):
       loss = tf.keras.losses.cosine_similarity(y1, y2, axis=1)
       glog.info('test_cosine_similarity loss shape axis=1 ' + str(loss.shape))
       self.assertEqual(loss.shape[0], sample_num)
+      for it in range(sample_num):
+        dp = 0
+        for it_col in range(data_dim):
+          dp = dp + y1[it, it_col] * y2[it, it_col]
+        loss2 = tf.keras.losses.cosine_similarity([y1[it,:]], [y2[it, :]], axis=1)
+        self.assertAlmostEqual(float(loss2), -dp, 5)
+
 
   def test_loss2_cpu(self):
     sample_num = 100
@@ -321,8 +400,8 @@ class TestNumpy(unittest.TestCase):
 if __name__ == "__main__":
   os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
   gpu_ids = ['0', '1']
-  os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
-  # or os.environ["CUDA_VISIBLE_DEVICES"] = ""
+  #os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
+  os.environ["CUDA_VISIBLE_DEVICES"] = ""
   gpu_devices = tf.config.experimental.list_physical_devices('GPU')
   for device in gpu_devices:
     tf.config.experimental.set_memory_growth(device, True)
