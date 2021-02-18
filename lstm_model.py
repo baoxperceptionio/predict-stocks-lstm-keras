@@ -5,6 +5,7 @@
 import numpy as np
 import glog
 import os
+import math
 import tensorflow as tf
 import unittest
 from keras.models import Sequential
@@ -16,10 +17,10 @@ from keras.callbacks import ModelCheckpoint
 import msgpack_numpy as msg_np
 
 class LstmModel:
-  def __init__(self, epochs=30000, bert_dim=768, output_dir='checkpoint', gpu_devices=["GPU:0", "GPU:1"]):
+  def __init__(self, epochs=30000, bert_dim=768, output_dir=None, gpu_devices=["GPU:0", "GPU:1"]):
     self.length_of_sequences = -1
     self.bert_dim = bert_dim
-    self.batch_size = 1024
+    self.batch_size = 512
     self.epochs = epochs
     self.output_dir = output_dir
     self.gpu_devices = gpu_devices
@@ -34,10 +35,10 @@ class LstmModel:
     fpath_weights = os.path.join(self.output_dir, str(self.length_of_sequences) + '_{epoch:05d}.h5')
     # save_freq is computed on batches. not epcho
     model_checkpoint = ModelCheckpoint(
-        filepath=fpath_weights, verbose=True, save_freq=5000
+        filepath=fpath_weights, verbose=True, save_freq=20000
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
-      monitor='loss', min_delta=1e-4, patience=100, verbose=0,
+      monitor='loss', min_delta=1e-6 / self.bert_dim, patience=100, verbose=0,
       mode='auto', baseline=None, restore_best_weights=True)
 
     callbacks = [model_checkpoint, early_stop]
@@ -142,6 +143,19 @@ class LstmModel:
     if not self.check_training_val_data_format(x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val):
       exit()
     return x_train, y_train, x_val, y_val
+  def validate_dataset(self, ds):
+      for elem in ds:
+        if elem[0].numpy().shape[0] != elem[1].numpy().shape[0]:
+          return False
+        if elem[0].numpy().shape[1] != self.length_of_sequences * 2 - 1:
+          return False
+        if elem[0].numpy().shape[2] != self.bert_dim:
+          return False
+        if elem[1].numpy().shape[1] != 1:
+          return False
+        if elem[0].numpy().shape[2] != self.bert_dim:
+          return False
+      return True
 
   # stress test
   def random_training_data(self, train_sample_num):
@@ -179,48 +193,53 @@ class LstmModel:
       pass#exit()
     return x_train, y_train, x_val, y_val
    
-  def random_training_dataset(self, sample_num=100):
+  def random_training_dataset(self, sample_num=100, length_of_sequences=1):
     # generate random perfect data for testing or for boostrap model parameters
     if self.length_of_sequences < 0:
-      self.length_of_sequences = 5
+      self.length_of_sequences = length_of_sequences
     train_x = []
     train_y = []
-    for it in range(sample_num):
-      x = np.random.rand(self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
-      for it1 in range(x.shape[0]):
-        x[it1, :] = x[it1, :] / np.linalg.norm(x[it1, :])
-      y = x[-1, :]
-      x = x[np.newaxis, :, :]
+    for it in range(math.ceil(sample_num / self.batch_size)):
+      x = np.random.rand(self.batch_size, self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
+      y = np.empty((self.batch_size, 1, self.bert_dim), dtype=np.single)
+      for it_batch in range(self.batch_size):
+        for it1 in range(x.shape[1]):
+          x[it_batch, it1, :] = x[it_batch, it1, :] / np.linalg.norm(x[it_batch, it1, :])
+        y[it_batch, 0, :] = x[it_batch, -1, :]
       array_sum = np.sum(x)
       if np.isnan(array_sum):
         glog.fatal('x nan')
-      y = y[np.newaxis, np.newaxis, :]
       train_x.append(x)
       train_y.append(y)
     val_x = []
     val_y = []
-    for it in range(int(sample_num * 0.05)):
-      x = np.random.rand(self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
-      for it1 in range(x.shape[0]):
-        x[it1, :] = x[it1, :] / np.linalg.norm(x[it1, :])
-      x = x[np.newaxis, :, :]
+    val_sample_num = math.ceil(sample_num * 0.01)
+    for it in range(math.ceil(val_sample_num / self.batch_size)):
+      x = np.random.rand(self.batch_size, self.length_of_sequences * 2 - 1, self.bert_dim).astype(float)
+      for it_batch in range(self.batch_size):
+        for it1 in range(x.shape[1]):
+          x[it_batch, it1, :] = x[it_batch, it1, :] / np.linalg.norm(x[it_batch, it1, :])
+        y[it_batch, 0, :] = x[it_batch, -1, :]
       array_sum = np.sum(x)
       if np.isnan(array_sum):
         glog.fatal('x nan')
-      y = x[-1, :]
-      y = y[np.newaxis, np.newaxis, :]
       val_x.append(x)
       val_y.append(y)
 
     #if not self.check_training_val_data_format(x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val):
     #  exit()
     options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
     train_dataset = tf.data.Dataset.from_tensor_slices((train_x, train_y))
     train_dataset = train_dataset.with_options(options)
     val_dataset = tf.data.Dataset.from_tensor_slices((val_x, val_y))
     val_dataset = train_dataset.with_options(options)
-
+    if not self.validate_dataset(train_dataset):
+      glog.fatal('invalid train_dataset')
+      return None, None
+    if not self.validate_dataset(train_dataset):
+      glog.fatal('invalid val_dataset')
+      return None, None
     return train_dataset, val_dataset
   # make model
   def create_model(self):
@@ -229,24 +248,22 @@ class LstmModel:
         return None
     strategy = tf.distribute.MirroredStrategy(devices=self.gpu_devices)
     with strategy.scope():
-      self.model = Sequential()
-      lstm_out_units = int(self.bert_dim / 8) # this does not neccessarily equal to bert dim
+      lstm_out_units = int(64) # this does not neccessarily equal to bert dim
+      timestamp_num = self.length_of_sequences * 2 - 1
       # see the # of param calculation in https://datascience.stackexchange.com/questions/10615/number-of-parameters-in-an-lstm-model
       # https://arxiv.org/pdf/1409.3215.pdf 
       # We found deep LSTMs to significantly outperform shallow LSTMs, 
       # where each additional layer reduced perplexity by nearly 10%, possibly due to their much larger hidden state. 
-      timestamp_num = self.length_of_sequences * 2 - 1
+      self.model = Sequential()
       self.model.add(LSTM(units=lstm_out_units, input_length=timestamp_num, input_dim=self.bert_dim, return_sequences=False, dropout=0.1))
-      self.model.add(Reshape(target_shape=(1, lstm_out_units)))
-      self.model.add(LSTM(units=lstm_out_units, input_length=1, input_dim=lstm_out_units, return_sequences=False, dropout=0.1))
-      self.model.add(Reshape(target_shape=(1, lstm_out_units)))
-      self.model.add(LSTM(units=lstm_out_units, input_length=1, input_dim=lstm_out_units, return_sequences=False, dropout=0.1))
-      self.model.add(Reshape(target_shape=(1, lstm_out_units)))
-      self.model.add(LSTM(units=lstm_out_units, input_length=1, input_dim=lstm_out_units, return_sequences=False, dropout=0.1))
-      self.model.add(Dropout(rate=0.1))
+      for additional_lstm_layer in range(0):
+        self.model.add(Reshape(target_shape=(1, lstm_out_units)))
+        self.model.add(LSTM(units=lstm_out_units, input_length=1, input_dim=lstm_out_units, return_sequences=False, dropout=0.1))
+      #self.model.add(Dropout(rate=0.1))
       self.model.add(Dense(units=self.bert_dim, activation='linear'))
       # cosine_similarity mean_squared_error
-      self.model.compile(loss=tf.keras.losses.CosineSimilarity(axis=-1), optimizer="sgd")
+      #self.model.compile(loss=tf.keras.losses.CosineSimilarity(axis=-1), optimizer="sgd")
+      self.model.compile(loss=tf.keras.losses.MeanSquaredError(), optimizer="Adagrad")
       self.model.summary()
       return True
     glog.error('multigpu setting failed')
@@ -273,12 +290,14 @@ class LstmModel:
     glog.info('loading ' + last_model_file + ' ok')
     return True
   # do learning
-  def train(self, x_train=None, y_train=None, x_val=None, y_val=None, train_dataset=None, val_dataset=None, checkpoint_folder=None):
+  def train(self, x_train=None, y_train=None, x_val=None, y_val=None, train_dataset=None, val_dataset=None, load_checkpoint_folder=None):
     # try to load from check point
-    if checkpoint_folder is not None:
-      self.load_last_checkpoint(checkpoint_folder=checkpoint_folder)
+    if load_checkpoint_folder is not None:
+      self.load_last_checkpoint(checkpoint_folder=load_checkpoint_folder)
     if train_dataset is not None:
-      self.model.fit(train_dataset, validation_data=val_dataset, batch_size=self.batch_size, epochs=self.epochs, workers=16, callbacks=self.get_callbacks())
+      tf.debugging.set_log_device_placement(True)
+      # Do not specify the batch_size if your data is in the form of datasets
+      self.model.fit(train_dataset, validation_data=val_dataset, epochs=self.epochs, workers=32, callbacks=self.get_callbacks())
     else:
       # tf.debugging.set_log_device_placement(True)
       self.model.fit(x_train, y_train, batch_size=self.batch_size, validation_data=(x_val, y_val), epochs=self.epochs, workers=16, callbacks=self.get_callbacks())
@@ -288,27 +307,44 @@ class LstmModel:
 
 class TestLSTM(unittest.TestCase):
   def test_random_train(self):
-    model_wrapper = LstmModel()
-    train_ds, val_ds = model_wrapper.random_training_dataset(sample_num=10000)
+    model_wrapper = LstmModel(gpu_devices=["GPU:0"])
+    train_ds, val_ds = model_wrapper.random_training_dataset(sample_num=1024 * 16)
     model_wrapper.create_model()
-    model_wrapper.epochs = 10
-    for elem in train_ds:
-      self.assertEqual(elem[0].numpy().shape[0], 1)
-      self.assertEqual(elem[0].numpy().shape[1], model_wrapper.length_of_sequences * 2 - 1)
-      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
-      self.assertEqual(elem[1].numpy().shape[0], 1)
-      self.assertEqual(elem[1].numpy().shape[1], 1)
-      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
-
-    for elem in val_ds:
-      self.assertEqual(elem[0].numpy().shape[0], 1)
-      self.assertEqual(elem[0].numpy().shape[1], model_wrapper.length_of_sequences * 2 - 1)
-      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
-      self.assertEqual(elem[1].numpy().shape[0], 1)
-      self.assertEqual(elem[1].numpy().shape[1], 1)
-      self.assertEqual(elem[0].numpy().shape[2], model_wrapper.bert_dim)
+    model_wrapper.epochs = 50
+    self.assertTrue(model_wrapper.validate_dataset(train_ds))
+    self.assertTrue(model_wrapper.validate_dataset(val_ds))
     model_wrapper.train(train_dataset=train_ds, val_dataset=val_ds, checkpoint_folder=None)
-
+    # test prediction for all
+    y_pred = model_wrapper.predict(val_ds)
+    glog.info("y_pred.shape" + str(y_pred.shape))
+    # test prediction each batch
+    for val_xy in val_ds:
+      val_x = val_xy[0].numpy()
+      val_y = val_xy[1].numpy()
+      val_y_2d = np.reshape(val_y, (val_y.shape[0], val_y.shape[2]))
+      y_pred = model_wrapper.predict(val_x)
+      glog.info("val_y_2d\n" + str(val_y_2d[10:11, 10:15]))
+      glog.info("y_pred\n" + str(y_pred[10:11, 10:15]))
+      #loss = tf.keras.losses.cosine_similarity(y_pred, val_y_2d, axis=1)
+      self.assertEqual(y_pred.shape[0], val_y_2d.shape[0])
+      self.assertEqual(y_pred.shape[1], val_y_2d.shape[1])
+      mse = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
+      loss = mse(val_y_2d, y_pred)
+      self.assertEqual(len(loss), val_y_2d.shape[0])
+      glog.info("loss[0:5]" + str(loss[0:5]))
+      self.assertEqual(len(loss.shape), 1)
+      for it in range(len(loss)):
+        if loss[it] > 0.01:
+          glog.info('loss[it] ' + str(loss[it]))
+          glog.info('y_pred ' + str(y_pred[it, 10:15]))
+          glog.info('val_y_2d ' + str(val_y_2d[it, 10:15]))
+      # compute loss myself
+      for it in range(val_y_2d.shape[0]):
+        sq = 0
+        for it2 in range(val_y_2d.shape[1]):
+          sq = sq + (val_y_2d[it, it2] - y_pred[it, it2]) * (val_y_2d[it, it2] - y_pred[it, it2])
+        sq = sq / val_y_2d.shape[1]
+        self.assertAlmostEqual(sq, float(loss[it]), 8)
 class TestNumpy(unittest.TestCase):
   def test_loss(self):
     y1 = np.array([1, 2, 3, 4, 5, 6], dtype=np.single)
@@ -344,6 +380,25 @@ class TestNumpy(unittest.TestCase):
     glog.info('test_loss loss shape ' + str(loss.shape))
     # self.assertAlmostEqual(float(loss[0]), -1, 5)
   
+  def test_mse(self):
+    mse = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
+    y1 = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.single)
+    y2 = np.array([[1, 2, 3], [4, 6, 6]], dtype=np.single)
+    loss = mse(y1, y2)
+    glog.info("test_mse loss.shape" + str(loss.shape))
+    glog.info("test_mse loss " + str(loss))
+    for it in range(y1.shape[0]):
+      sq = 0
+      for it2 in range(y1.shape[1]):
+        sq = sq + (y1[it, it2] - y2[it, it2]) * (y1[it, it2] - y2[it, it2])
+      sq = sq / y1.shape[1]
+      self.assertAlmostEqual(sq, float(loss[it]), 5)
+    # default reduction
+    mse = tf.keras.losses.MeanSquaredError()
+    loss = mse(y1, y2)
+    glog.info("test_mse loss.shape" + str(loss.shape))
+    glog.info("test_mse loss " + str(loss))
+
   def test_cosine_similarity(self):
     sample_num = 10
     data_dim = 3
@@ -400,10 +455,11 @@ class TestNumpy(unittest.TestCase):
 
 if __name__ == "__main__":
   os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
-  gpu_ids = ['0', '1']
-  os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
+  #gpu_ids = ['0']
+  #os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
+  os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
   #os.environ["CUDA_VISIBLE_DEVICES"] = ""
   gpu_devices = tf.config.experimental.list_physical_devices('GPU')
   for device in gpu_devices:
     tf.config.experimental.set_memory_growth(device, True)
-  unittest.main(TestNumpy())
+  unittest.main(TestLSTM())
